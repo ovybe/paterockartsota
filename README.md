@@ -23,7 +23,7 @@ For the script used for training the individual models, we used the current late
 * PIL
 * matplotlib
 * Jupyter Notebook: 
-```conda install jupyter notebook``` <
+```conda install jupyter notebook```
 # Running the scripts
 To train the individual models, you should use the notebook [image_classification.ipynb](https://github.com/ovybe/paterockartsota/blob/main/implementations/Project_PATE_ML.py)
 
