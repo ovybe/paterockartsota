@@ -1,7 +1,7 @@
 #Importing  Libraries
 import torch
 from torchvision import  transforms, datasets, models
-from torch.utils.data import Subset , Dataset
+from torch.utils.data import Subset , Dataset, ConcatDataset
 from torch.distributions import Laplace
 import torch.nn as nn
 from PIL import Image
@@ -48,13 +48,29 @@ class AddLaplaceNoise:
         
         return noisy_img
 
-# Set up data transformations with custom augmentation
-transform = transforms.Compose([
-    transforms.Resize((180, 180)),
-    #AddLaplaceNoise(mean=0.0, scale=0.1),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
+# Define data transformations for data augmentation and normalization
+train_transforms = [
+        transforms.Resize(size=(180,180)),
+        transforms.ColorJitter(brightness=0.5,contrast=0.5,saturation=0.5,hue=0.5)
+        # transforms.RandomRotation(degrees=60),
+        #transforms.RandomGrayscale(),
+        #transforms.RandomHorizontalFlip(),
+    ]
+grayscale_transforms = train_transforms.copy()
+grayscale_transforms.append(transforms.Grayscale(num_output_channels=3))
+train_transforms_end = [
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+]
+data_transforms = {
+    'train': transforms.Compose(train_transforms+train_transforms_end),
+    'val': transforms.Compose([
+        transforms.Resize(size=(180,180)),
+        #transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ]),
+}
 
 # Define the data directory
 ROOT_DIR = os.path.abspath(os.curdir)
@@ -63,48 +79,50 @@ dataset_name='dataset'
 data_dir = os.path.join(ROOT_DIR, dataset_name)
 print(data_dir)
 
-class Dataset(Dataset):
-    def __init__(self, root_dir, dataset_folder, class_names=None, transform=None):
-        self.root_dir = root_dir
-        self.transform = transform
-        self.dataset_folder = dataset_folder
-        self.class_names = class_names or sorted(os.listdir(root_dir))
-        
-        # Collect image paths and labels for all classes
-        self.images = []
-        self.labels = []
-        
-        for label, class_name in enumerate(self.class_names):
-            class_dir = os.path.join(root_dir, dataset_folder, class_name)
-            class_images = [os.path.join(class_dir, img) for img in os.listdir(class_dir)]
-            self.images.extend(class_images)
-            self.labels.extend([label] * len(class_images))
+concatdatasets = []
+concatdatasets_val = []
 
-    def __len__(self):
-        return len(self.images)
+# Create data loaders
+#og_image_datasets = {x: datasets.ImageFolder(os.path.join(data_dir, x), transforms.Compose(train_transforms_end)) for x in ['train']}
+image_datasets = {x: datasets.ImageFolder(os.path.join(data_dir, x), data_transforms[x]) for x in ['train', 'val']}
+tr_grayscale_dataset = {x: datasets.ImageFolder(os.path.join(data_dir, x), transforms.Compose(grayscale_transforms+train_transforms_end)) for x in ['train','val']}
+grayscale_transforms.append(transforms.RandomHorizontalFlip(p=1))
+tr_grayscale_flipped_dataset = {x: datasets.ImageFolder(os.path.join(data_dir, x), transforms.Compose(grayscale_transforms+train_transforms_end)) for x in ['train','val']}
 
-    def __getitem__(self, idx):
-        img_path = self.images[idx]
-        image = Image.open(img_path).convert('RGB')
-        
-        if self.transform:
-            image = self.transform(image)
-        
-        label = torch.tensor(self.labels[idx], dtype=torch.long)
-        
-        return image, label
+#concatdatasets.append(og_image_datasets['train'])
+concatdatasets.append(image_datasets['train'])
+concatdatasets.append(tr_grayscale_dataset['train'])
+concatdatasets.append(tr_grayscale_flipped_dataset['train'])
+
+concatdatasets_val.append(image_datasets['val'])
+concatdatasets_val.append(tr_grayscale_dataset['val'])
+concatdatasets_val.append(tr_grayscale_flipped_dataset['val'])
+
+r_times = 5;
+rotate_transf = train_transforms
+tr_rotate = []
+print(rotate_transf)
+for i in range(5):
+    rotate_transf = train_transforms.copy()
+    for j in range(i):
+         rotate_transf.append(transforms.RandomRotation(degrees=(60,60)))
+    concatdatasets.append(datasets.ImageFolder(os.path.join(data_dir, 'train'), transforms.Compose(rotate_transf+train_transforms_end)))
+    concatdatasets_val.append(datasets.ImageFolder(os.path.join(data_dir, 'val'), transforms.Compose(rotate_transf+train_transforms_end)))
+
+image_datasets['train'] = ConcatDataset(concatdatasets)
+image_datasets['val'] = ConcatDataset(concatdatasets_val)
+print(len(image_datasets['train']))
+print(len(image_datasets['val']))
 
 
 # Create the dataset and apply transform
 #dataset = Dataset(root_dir=ROOT_DIR, dataset_folder=dataset_name, class_names=['Circle','Cross','Goat','Person','Spiral','Stag','Zigzag'], transform=transform)
-image_datasets = {x: datasets.ImageFolder(os.path.join(data_dir, x), transform) for x in ['train', 'val']}
-
 dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=4, shuffle=True, num_workers=4) for x in ['train', 'val']}
 
 dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
 print(dataset_sizes)
 
-class_names = image_datasets['train'].classes
+class_names = image_datasets['train'].datasets[0].classes
 print(class_names)
 
 ## Define output directory
@@ -156,7 +174,7 @@ for i in range(num_teachers):
     
     # Define the loss function and optimizer
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(model.parameters(), lr=0.001*2.82, momentum=0.9)  # Use all parameters, do lr = 004 if batches are 64 sqrt(64/4)
+    optimizer = optim.SGD(model.parameters(), lr=0.0001, momentum=0.9)  # Use all parameters, lr = 0.001*2.82 do lr = 004 if batches are 64 sqrt(64/4)
 
 
     # Move the model to the GPU if available
@@ -183,7 +201,7 @@ def predict(model, dataloader):
     return outputs
 
 # Aggregate teacher predictions using Laplace mechanism
-epsilon = 0.2
+epsilon = 1 # or try 0.2
 def aggregated_teacher(models, dataloader, dataset_size, epsilon):
     preds = torch.zeros((len(models),dataset_size), dtype=torch.long)
     for i, model in enumerate(models):
@@ -192,11 +210,12 @@ def aggregated_teacher(models, dataloader, dataset_size, epsilon):
 
     labels = np.array([]).astype(int)
     for image_preds in np.transpose(preds):
-        label_counts = np.bincount(image_preds, minlength=2)
+        label_counts = np.bincount(image_preds, minlength=7)
         beta = 1 / epsilon
 
         for i in range(len(label_counts)):
             label_counts[i] += np.random.laplace(0, beta, 1)
+        label_counts = np.clip(label_counts, 0, None)  # Ensure no negative counts
 
         new_label = np.argmax(label_counts)
         labels = np.append(labels, new_label)
@@ -225,7 +244,7 @@ student_model = resnext101_64x4d(pretrained=True)
 num_features = student_model.fc.in_features
 student_model.fc = nn.Linear(num_features, len(class_names))  # Set the final layer to have 8 output classes
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(model.parameters(), lr=0.001*2.82, momentum=0.9)  # Use all parameters, do lr = 004 if batches are 64 sqrt(64/4)
+optimizer = optim.SGD(model.parameters(), lr=0.0001, momentum=0.9)  # Use all parameters, do lr = 004 if batches are 64 sqrt(64/4)
 student_model = student_model.to('cpu')
 epochs = 100
 steps = 0
