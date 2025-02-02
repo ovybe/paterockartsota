@@ -1,0 +1,10 @@
+*.pth filter=lfs diff=lfs merge=lfs -text
+teacher_models/** filter=lfs diff=lfs merge=lfs -text
+teacher_models/PATE/combined_standard filter=lfs diff=lfs merge=lfs -text
+teacher_models/PATE/densenet_standard filter=lfs diff=lfs merge=lfs -text
+teacher_models/PATE/resnet18_standard filter=lfs diff=lfs merge=lfs -text
+teacher_models/PATE/resnext_standard filter=lfs diff=lfs merge=lfs -text
+teacher_models/KD/combined_standard filter=lfs diff=lfs merge=lfs -text
+teacher_models/KD/densenet_standard filter=lfs diff=lfs merge=lfs -text
+teacher_models/KD/resnet18_standard filter=lfs diff=lfs merge=lfs -text
+teacher_models/KD/resnext_standard filter=lfs diff=lfs merge=lfs -text
