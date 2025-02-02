@@ -1,8 +1,10 @@
+#Bouragaa Seif eddine Final project Machine learning Class
+
 #Importing  Libraries
 import torch
-from torchvision import  transforms, datasets, models
-from torch.utils.data import Subset , Dataset, ConcatDataset
-from torch.distributions import Laplace
+from torchvision import  transforms
+from torch.utils.data import Subset , Dataset
+from torchvision.utils import make_grid, draw_bounding_boxes
 import torch.nn as nn
 from PIL import Image
 import torch.nn.functional as F
@@ -11,254 +13,407 @@ from syft.frameworks.torch.differential_privacy import pate
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+from bs4 import BeautifulSoup
 from sklearn.metrics import confusion_matrix, classification_report
 #from imblearn.over_sampling import SMOTE
 from sklearn.model_selection import train_test_split
-from torchvision.models.resnet import ResNet, Bottleneck
 
-def resnext101_64x4d(pretrained=False, **kwargs):
-    """Constructs a ResNeXt-101 64x4d model."""
-    model = ResNet(Bottleneck, [3, 4, 23, 3], groups=64, width_per_group=4, **kwargs)
-    if pretrained:
-        # state_dict = torch.utils.model_zoo.load_url(
-        #     'https://download.pytorch.org/models/resnext101_64x4d-173b62eb.pth', 
-        #     model_dir="./"
-        # )
-        # Load the TorchScript model
-        state_dict = torch.load('resnext101_64x4d-173b62eb_old.pth')
-        # Extract the state_dict from the ScriptModule
-        model.load_state_dict(state_dict)
-    return model
 
-# Define a custom Laplace noise transform
-class AddLaplaceNoise:
-    def __init__(self, mean=0.0, scale=1.0):
-        self.laplace_dist = Laplace(mean, scale)
+new_size = (224, 224)
+# Set up data transformations with custom augmentation
+transform = transforms.Compose([
+    # transforms.RandomAffine(degrees=(-5, 5), scale=(1 - 0.1, 1 + 0.1)),  # Adjust scale and shear accordingly
+    transforms.Resize(new_size),
+    # transforms.RandomChoice([  # Adjust rotation if needed
+    #     transforms.RandomChoice([transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2), transforms.RandomGrayscale(p=0.1)]),
+    # ]),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+
+def rescale_bounding_boxes(original_shape: tuple, new_shape: tuple,
+                           bounding_boxes: list) -> list:
+    """
+    Rescales bounding box coords according to new image size
+    :param original_shape: (W, H)
+    :param new_shape: (W, H)
+    :param bounding_boxes: [[x1, y1, x2, y2], ...]
+    :return: scaled bbox coords
+    """
+    original_w, original_h = original_shape
+    new_w, new_h = new_shape
+    bounding_boxes = np.array(bounding_boxes, dtype=np.float64)
+    scale_h, scale_w = new_h / original_h, new_w / original_w
+    bounding_boxes[:, 0] *= scale_w
+    bounding_boxes[:, 1] *= scale_h
+    bounding_boxes[:, 2] *= scale_w
+    bounding_boxes[:, 3] *= scale_h
+    bounding_boxes = np.clip(bounding_boxes, a_min=0, a_max=None)
+    bounding_boxes = bounding_boxes.astype(np.uint32).tolist()
+    return bounding_boxes
+
+
+class RockArtDataset(object):
+    def generate_box(self, obj):
+
+        xmin = int(obj.find('xmin').text)
+        ymin = int(obj.find('ymin').text)
+        xmax = int(obj.find('xmax').text)
+        ymax = int(obj.find('ymax').text)
+
+        return [xmin, ymin, xmax, ymax]
+
+    def generate_label(self, obj):
+        if obj.find('name').text == "Person":
+            return 1
+        elif obj.find('name').text == "Goat":
+            return 2
+        elif obj.find('name').text == "Stag":
+            return 3
+        elif obj.find('name').text == "Circle":
+            return 4
+        elif obj.find('name').text == "Spiral":
+            return 5
+        elif obj.find('name').text == "Zigzag":
+            return 6
+        elif obj.find('name').text == "Cross":
+            return 7
+        return 0
+    def generate_target(self, image_id, file):
+        with open(file) as f:
+            data = f.read()
+            soup = BeautifulSoup(data, 'xml')
+            objects = soup.find_all('object')
+
+            num_objs = len(objects)
+
+            # Bounding boxes for objects
+            # In coco format, bbox = [xmin, ymin, width, height]
+            # In pytorch, the input should be [xmin, ymin, xmax, ymax]
+            boxes = []
+            labels = []
+            for i in objects:
+                boxes.append(self.generate_box(i))
+                labels.append(self.generate_label(i))
+            boxes = torch.as_tensor(boxes, dtype=torch.float32)
+            # Labels (In my case, I only one class: target class or background)
+            labels = torch.as_tensor(labels, dtype=torch.int64)
+            # Tensorise img_id
+            img_id = torch.tensor([image_id])
+            # Annotation is in dictionary format
+            target = {}
+            target["boxes"] = boxes
+            target["labels"] = labels
+            target["image_id"] = img_id
+
+            return target
     
-    def __call__(self, img):
-        # Convert the image to a tensor if not already done
-        img_tensor = transforms.ToTensor()(img)  # [C, H, W], range [0, 1]
-        
-        # Generate Laplace noise of the same shape
-        noise = self.laplace_dist.sample(img_tensor.shape)
-        
-        # Add noise and clamp to valid range [0, 1]
-        noisy_img = img_tensor + noise
-        noisy_img = torch.clamp(noisy_img, 0.0, 1.0)
-        
-        return noisy_img
+    def __init__(self, transform, root_dir):
+        self.transforms = transform
+        # load all image files, sorting them to
+        # ensure that they are aligned
+        self.root_dir = root_dir
+        self.imgs = list(sorted(os.listdir(f'{root_dir}/content/files/')))
+        self.labels = list(sorted(os.listdir(f'{root_dir}/content/labels/')))
 
-# Define data transformations for data augmentation and normalization
-train_transforms = [
-        transforms.Resize(size=(180,180)),
-        transforms.ColorJitter(brightness=0.5,contrast=0.5,saturation=0.5,hue=0.5)
-        # transforms.RandomRotation(degrees=60),
-        #transforms.RandomGrayscale(),
-        #transforms.RandomHorizontalFlip(),
-    ]
-grayscale_transforms = train_transforms.copy()
-grayscale_transforms.append(transforms.Grayscale(num_output_channels=3))
-train_transforms_end = [
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-]
-data_transforms = {
-    'train': transforms.Compose(train_transforms+train_transforms_end),
-    'val': transforms.Compose([
-        transforms.Resize(size=(180,180)),
-        #transforms.CenterCrop(224),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ]),
-}
+    def __getitem__(self, idx):
+        # load images ad masks
+        print(idx)
+        file_image = self.imgs[idx]
+        file_label = self.labels[idx]
+        img_path = os.path.join(f'{self.root_dir}/content/files/', file_image)
+        label_path = os.path.join(f'{self.root_dir}/content/labels', file_label)
+        img = Image.open(img_path).convert("RGB")
+        width, height = img.size
+        #Generate Label
+        target = self.generate_target(idx, label_path)
 
-# Define the data directory
-ROOT_DIR = os.path.abspath(os.curdir)
-print(ROOT_DIR)
-dataset_name='dataset'
-data_dir = os.path.join(ROOT_DIR, dataset_name)
-print(data_dir)
+        if self.transforms is not None:
+            img, target["boxes"] = self.transforms(img, target["boxes"])
 
-concatdatasets = []
-concatdatasets_val = []
+        return img, target
 
-# Create data loaders
-#og_image_datasets = {x: datasets.ImageFolder(os.path.join(data_dir, x), transforms.Compose(train_transforms_end)) for x in ['train']}
-image_datasets = {x: datasets.ImageFolder(os.path.join(data_dir, x), data_transforms[x]) for x in ['train', 'val']}
-tr_grayscale_dataset = {x: datasets.ImageFolder(os.path.join(data_dir, x), transforms.Compose(grayscale_transforms+train_transforms_end)) for x in ['train','val']}
-grayscale_transforms.append(transforms.RandomHorizontalFlip(p=1))
-tr_grayscale_flipped_dataset = {x: datasets.ImageFolder(os.path.join(data_dir, x), transforms.Compose(grayscale_transforms+train_transforms_end)) for x in ['train','val']}
+    def __len__(self):
+        return len(self.imgs)
+                
 
-#concatdatasets.append(og_image_datasets['train'])
-concatdatasets.append(image_datasets['train'])
-concatdatasets.append(tr_grayscale_dataset['train'])
-concatdatasets.append(tr_grayscale_flipped_dataset['train'])
+#     def __getitem__(self, idx):
+#         if isinstance(self.images[idx], str):  # Check if the image is a path
+#             img_path = self.images[idx]
+#             image = Image.open(img_path).convert('RGB')
+#             print("what am I")
+#         else:
+#             # If it's a NumPy array (resampled image), convert it to PIL Image
+#             image = Image.fromarray(self.images[idx].astype('uint8'), 'RGB')
+#             print("test")
+#         if self.transform:
+#             image = self.transform(image)
 
-concatdatasets_val.append(image_datasets['val'])
-concatdatasets_val.append(tr_grayscale_dataset['val'])
-concatdatasets_val.append(tr_grayscale_flipped_dataset['val'])
+#         label = self.labels[idx]
+#         bbox = self.boxes[idx]
 
-r_times = 5;
-rotate_transf = train_transforms
-tr_rotate = []
-print(rotate_transf)
-for i in range(5):
-    rotate_transf = train_transforms.copy()
-    for j in range(i):
-         rotate_transf.append(transforms.RandomRotation(degrees=(60,60)))
-    concatdatasets.append(datasets.ImageFolder(os.path.join(data_dir, 'train'), transforms.Compose(rotate_transf+train_transforms_end)))
-    concatdatasets_val.append(datasets.ImageFolder(os.path.join(data_dir, 'val'), transforms.Compose(rotate_transf+train_transforms_end)))
-
-image_datasets['train'] = ConcatDataset(concatdatasets)
-image_datasets['val'] = ConcatDataset(concatdatasets_val)
-print(len(image_datasets['train']))
-print(len(image_datasets['val']))
-
+#         return image, label
 
 # Create the dataset and apply transform
-#dataset = Dataset(root_dir=ROOT_DIR, dataset_folder=dataset_name, class_names=['Circle','Cross','Goat','Person','Spiral','Stag','Zigzag'], transform=transform)
-dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=4, shuffle=True, num_workers=4) for x in ['train', 'val']}
+dataset = RockArtDataset(transform=transform, root_dir='/home/lemawul/PATE')
 
-dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
-print(dataset_sizes)
+print(dataset.__getitem__(1))
+die()
+# Load image data into a NumPy array
+image_data = np.array([np.array(Image.open(img_path).convert('RGB').resize(new_size)) for img_path in dataset.images])
+# Flatten the image data
+image_data_flatten = image_data.reshape(image_data.shape[0], -1)
+# Apply SMOTE to the entire dataset
+if len(set(dataset.labels)) == 2:  # Check if it's a binary classification problem
+    minority_class = 1  # Tuberculosis is the minority class
+    minority_class_indices = [i for i, label in enumerate(dataset.labels) if label == minority_class]
 
-class_names = image_datasets['train'].datasets[0].classes
-print(class_names)
+    smote = SMOTE(sampling_strategy='auto', random_state=42)
+    X_resampled, y_resampled = smote.fit_resample(image_data_flatten, dataset.labels)
 
-## Define output directory
-#output_dir = os.path.join(ROOT_DIR, dataset_name+'_noisy')  # Replace with desired output path
-#os.makedirs(output_dir, exist_ok=True)
+    # Reshape the resampled data
+    X_resampled = X_resampled.reshape(X_resampled.shape[0], 224, 224, 3)
 
-# Save the noisy dataset
-#for idx, (image_tensor, label) in enumerate(dataset):
-#    # Get class name
-#    class_name = dataset.classes[label]
-#    class_dir = os.path.join(output_dir, class_name)
-#    os.makedirs(class_dir, exist_ok=True)
-#    
-#    # Convert the tensor back to a PIL image
-#    noisy_image = transforms.ToPILImage()(image_tensor)
-#    
-#    # Save the image
-#    save_path = os.path.join(class_dir, f"noisy_image_{idx}.png")
-#    noisy_image.save(save_path)
-#
-#    if idx % 100 == 0:  # Progress update for large datasets
-#        print(f"Processed {idx} images...")
+    # Update the dataset with the resampled data
+    dataset.images = X_resampled
+    dataset.labels = y_resampled
 
-#print("Noisy dataset created and saved successfully!")
+#split the dataset
+train_size = int(0.7 * len(dataset))
+test_size = len(dataset) - train_size
+train_data, test_data = torch.utils.data.random_split(dataset, [train_size, test_size]) #traning data for teachers and Test for student training and validation
 
 
 # Define the number of teachers, batch size, and create teacher data loaders
-num_teachers = 3
-#batch_size = 32  # Adjust batch size based on your system's memory capacity
+num_teachers = 10
+batch_size = 32  # Adjust batch size based on your system's memory capacity
 
-teachers = []
+# Get the labels from the dataset
+labels = dataset.labels
 
-for i in range(num_teachers):
-    
-    # Load the pre-trained ResNet-18 model
-    #model = models.resnet18(pretrained=True)
-    #model = models.densenet201(pretrained=True)
-    model = resnext101_64x4d(pretrained=True)
-    num_features = model.fc.in_features
-    #num_features = model.classifier.in_features
-    model.fc = nn.Linear(num_features, len(class_names))  # Set the final layer to have 8 output classes
-    #odel.classifier = nn.Linear(num_features, len(class_names))  # Set the final layer to have 8 output classes
-    # Freeze all layers except the final classification layer
-    # for name, param in model.named_parameters():
-    #     if "fc" in name:  # Unfreeze the final classification layer
-    #         param.requires_grad = True
-    #     else:
-    #         param.requires_grad = False
-    
-    # Define the loss function and optimizer
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(model.parameters(), lr=0.0001, momentum=0.9)  # Use all parameters, lr = 0.001*2.82 do lr = 004 if batches are 64 sqrt(64/4)
+# Convert labels to class names for better visualization
+class_names = ['Normal', 'Tuberculosis']
+class_labels = [class_names[label] for label in labels]
+
+# Plot the distribution of images
+plt.figure(figsize=(8, 6))
+unique_labels, counts = np.unique(class_labels, return_counts=True)
+plt.bar(unique_labels, counts, color=['blue', 'orange'], edgecolor='black', alpha=0.7)
+plt.title('Distribution of Images')
+plt.xlabel('Class')
+plt.ylabel('Count')
+plt.show()
+
+# Function to plot a grid of images with normalization
+def plot_images(images, titles, h, w, rows=1, cols=5):
+    plt.figure(figsize=(15, 3 * rows))
+    for i in range(rows * cols):
+        plt.subplot(rows, cols, i + 1)
+
+        # Normalize pixel values for display
+        image = images[i].permute(1, 2, 0).numpy()
+        vmin, vmax = image.min(), image.max()
+        image = (image - vmin) / (vmax - vmin)
+
+        plt.imshow(image)
+        plt.title(titles[i])
+        plt.axis('off')
+    plt.show()
 
 
-    # Move the model to the GPU if available
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# Get a sample of normal and tuberculosis images
+normal_indices = [i for i, label in enumerate(dataset.labels) if label == 0][:5]
+tb_indices = [i for i, label in enumerate(dataset.labels) if label == 1][:5]
 
-    model = model.to(device)
+normal_images = [dataset[i][0] for i in normal_indices]
+tb_images = [dataset[i][0] for i in tb_indices]
 
-    model.load_state_dict(torch.load(f"teacher{i+1}_resnext64_300e_old.pth"))#, strict=False)
-    print(f"Loaded teacher {i+1}")
-    teachers.append(model)
+# Convert labels to class names for titles
+normal_titles = ['Normal'] * len(normal_images)
+tb_titles = ['Tuberculosis'] * len(tb_images)
 
-print("all good")
+# Plot the sample of images
+plot_images(normal_images + tb_images, normal_titles + tb_titles, 224, 224, rows=2, cols=5)
+
+
+#creates DataLoader objects for each teacher, dividing the training data equally among them
+def get_data_loaders(train_data, num_teachers):
+    teacher_loaders = []
+    data_size = len(train_data) // num_teachers
+    teacher_data_counts = []
+    for i in range(num_teachers):
+        indices = list(range(i * data_size, (i + 1) * data_size))
+        subset_data = Subset(train_data, indices)
+        loader = torch.utils.data.DataLoader(subset_data, batch_size=batch_size)
+        teacher_loaders.append(loader)
+        teacher_data_counts.append(len(subset_data))  # Store the number of data points
+
+    # Plot the number of data points for each teacher
+    plt.bar(range(1, num_teachers + 1), teacher_data_counts, color='blue', edgecolor='black', alpha=0.7)
+    plt.title('Number of Data Points for Each Teacher')
+    plt.xlabel('Teacher Number')
+    plt.ylabel('Number of Data Points')
+    plt.show()
+    return teacher_loaders
+
+
+teacher_loaders = get_data_loaders(train_data, num_teachers)
+
+indices = list(range(len(test_data)))
+# Split indices into training and validation sets
+train_indices, val_indices = train_test_split(indices, test_size=0.2, random_state=42)
+# Create Subset objects using the selected indices
+student_train_data = Subset(test_data, train_indices)
+student_test_data = Subset(test_data, val_indices)
+#Creates DataLoader objects for the student's training and validation data
+student_train_loader = torch.utils.data.DataLoader(student_train_data, batch_size=batch_size)
+student_test_loader = torch.utils.data.DataLoader(student_test_data, batch_size=batch_size)
+
+
+# Define the neural network model , a simple CNN model
+
+class Classifier(nn.Module):
+    def __init__(self):
+        super(Classifier, self).__init__()
+        self.conv1 = nn.Conv2d(3, 10, kernel_size=5)
+        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
+        self.conv2_drop = nn.Dropout2d()
+        self.fc1 = nn.Linear(20 * 29 * 29, 50)
+        self.fc2 = nn.Linear(50, 2)
+
+    def forward(self, x):
+        x = F.relu(F.max_pool2d(self.conv1(x), 2))
+        x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
+        x = x.view(x.size(0), -1)
+        x = F.relu(self.fc1(x))
+        x = F.dropout(x, training=self.training)
+        x = self.fc2(x)
+        return F.log_softmax(x, dim=1)
+
+# Function to train a model , train teachers
+def train(model, trainloader, criterion, optimizer, epochs=10):
+    losses = []
+    accuracies = []
+    for e in range(epochs):
+        running_loss = 0
+        running_corrects = 0
+        steps = 0
+        model.train()
+        for images, labels in trainloader:
+            optimizer.zero_grad()
+            output = model.forward(images)
+            loss = criterion(output, labels)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+            steps += 1
+
+            # Calculate accuracy
+            _, preds = torch.max(output, 1)
+            running_corrects += torch.sum(preds == labels)
+        epoch_loss = running_loss / len(trainloader)
+        epoch_acc = running_corrects.double() / len(trainloader.dataset)
+        losses.append(epoch_loss)
+        accuracies.append(epoch_acc.item())
+        print(f"Epoch {e + 1}/{epochs} | Loss: {np.round(epoch_loss, 3)} | Accuracy: {np.round(epoch_acc.item(), 3)}")
+
+    plt.figure(figsize=(10, 5))
+    plt.subplot(1, 2, 1)
+    plt.plot(losses, label='Training Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+
+    plt.subplot(1, 2, 2)
+    plt.plot(accuracies, label='Training Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.legend()
+
+    plt.show()
+
 
 # Function to make predictions using a model, predect student labels by teachers model
 def predict(model, dataloader):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
-    outputs = torch.zeros(0, dtype=torch.long, device=device)
+    outputs = torch.zeros(0, dtype=torch.long)
     model.eval()
     for images, labels in dataloader:
-        images = images.to(device)
         output = model.forward(images)
         ps = torch.argmax(torch.exp(output), dim=1)
         outputs = torch.cat((outputs, ps))
     return outputs
 
+
+# Train teacher models
+def train_models(num_teachers):
+    models = []
+    for i in range(num_teachers):
+        model = Classifier()
+        criterion = nn.NLLLoss()
+        optimizer = optim.Adam(model.parameters(), lr=0.001)
+        print(f"Training Teacher {i + 1}...")
+        train(model, teacher_loaders[i], criterion, optimizer)
+        models.append(model)
+        print(f"Teacher {i + 1} training completed.")
+    return models
+
+
+models = train_models(num_teachers)
 # Aggregate teacher predictions using Laplace mechanism
-epsilon = 1 # or try 0.2
-def aggregated_teacher(models, dataloader, dataset_size, epsilon):
-    preds = torch.zeros((len(models),dataset_size), dtype=torch.long)
+epsilon = 0.2
+def aggregated_teacher(models, dataloader, epsilon):
+    preds = torch.zeros((len(models),1680), dtype=torch.long)
     for i, model in enumerate(models):
         results = predict(model, dataloader)
         preds[i] = results
 
     labels = np.array([]).astype(int)
     for image_preds in np.transpose(preds):
-        label_counts = np.bincount(image_preds, minlength=7)
+        label_counts = np.bincount(image_preds, minlength=2)
         beta = 1 / epsilon
 
         for i in range(len(label_counts)):
             label_counts[i] += np.random.laplace(0, beta, 1)
-        label_counts = np.clip(label_counts, 0, None)  # Ensure no negative counts
 
         new_label = np.argmax(label_counts)
         labels = np.append(labels, new_label)
     return preds.numpy(), labels
 
-preds, student_labels = aggregated_teacher(teachers, dataloaders['train'], dataset_sizes['train'], epsilon)
 
-print(preds)
-print(student_labels)
+teacher_models = models
+preds, student_labels = aggregated_teacher(teacher_models, student_train_loader, epsilon)
 
-unique_labels = np.unique(student_labels)
-print("Unique labels in student_labels:", unique_labels)
-assert unique_labels.min() >= 0 and unique_labels.max() < len(class_names), "Invalid labels in student_labels!"
 
 # Define a data loader for the student with labels generated from aggregated teacher predictions
 def student_loader(student_train_loader, labels):
-    #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     for i, (data, _) in enumerate(iter(student_train_loader)):
         yield data, torch.from_numpy(labels[i * len(data): (i + 1) * len(data)])
 
 
+# Initialize the SummaryWriter
+writer = SummaryWriter('runs/student_model_experiment')
+
 # Train the student model using the labeled data
-#student_model = models.resnet18(pretrained=True)
-#student_model = models.densenet201(pretrained=True)
-student_model = resnext101_64x4d(pretrained=True)
+student_model = models.resnet18(pretrained=True)
 num_features = student_model.fc.in_features
-student_model.fc = nn.Linear(num_features, len(class_names))  # Set the final layer to have 8 output classes
+student_model.fc = nn.Linear(num_features, len(class_names))
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(model.parameters(), lr=0.0001, momentum=0.9)  # Use all parameters, do lr = 004 if batches are 64 sqrt(64/4)
-student_model = student_model.to('cpu')
+optimizer = optim.Adam(student_model.parameters(), lr=0.001)
 epochs = 100
 steps = 0
 running_loss = 0
 running_corrects = 0
 total_samples = 0
+
 # Lists to store training and validation accuracies and losses
 train_losses = []
 train_accuracies = []
 val_losses = []
 val_accuracies = []
+
 for e in range(epochs):
     student_model.train()
-    train_loader = student_loader(dataloaders['train'], student_labels)
+    train_loader = student_loader(student_train_loader, student_labels)
     for images, labels in train_loader:
         steps += 1
         optimizer.zero_grad()
@@ -272,48 +427,73 @@ for e in range(epochs):
         running_corrects += torch.sum(predss == labels)
         total_samples += labels.size(0)
         running_corrects.double() / total_samples
-        if steps % len(dataloaders['train']) == 0:
-            test_loss = 0
-            accuracy = 0
-            all_predictions = []
-            all_labels = []
-            student_model.eval()
-            with torch.no_grad():
-                for images, labels in dataloaders['val']:
-                    log_ps = student_model(images)
-                    test_loss += criterion(log_ps, labels).item()
-                    ps = torch.exp(log_ps)
-                    top_p, top_class = ps.topk(1, dim=1)
-                    equals = top_class == labels.view(*top_class.shape)
-                    accuracy += torch.mean(equals.type(torch.FloatTensor))
-                    all_predictions.extend(top_class.cpu().numpy())
-                    all_labels.extend(labels.cpu().numpy())
 
-                    # Calculate confusion matrix and classification report
-            conf_matrix = confusion_matrix(all_labels, all_predictions)
-            class_report = classification_report(all_labels, all_predictions, zero_division=0)
-            student_model.train()
-            print("Epoch: {}/{}.. ".format(e + 1, epochs),
-                  "Train Loss: {:.3f}.. ".format(running_loss / len(dataloaders['train'])),
-                  "Train Accuracy: {:.3f}.. ".format(running_corrects.double() / total_samples),
-                  "val Loss: {:.3f}.. ".format(test_loss / len(dataloaders['val'])),
-                  "val Accuracy: {:.3f}".format(accuracy / len(dataloaders['val']))),
-            # Store training and validation accuracies and losses
-            train_losses.append(running_loss / len(dataloaders['train']))
-            train_accuracies.append(running_corrects.double() / total_samples)
-            val_losses.append(test_loss / len(dataloaders['val']))
-            val_accuracies.append(accuracy / len(dataloaders['val']))
-            print("Confusion Matrix:")
-            print(conf_matrix)
+    if steps % len(student_train_loader) == 0:
+        test_loss = 0
+        accuracy = 0
+        all_predictions = []
+        all_labels = []
+        student_model.eval()
+        with torch.no_grad():
+            for images, labels in student_test_loader:
+                log_ps = student_model(images)
+                test_loss += criterion(log_ps, labels).item()
+                ps = torch.exp(log_ps)
+                top_p, top_class = ps.topk(1, dim=1)
+                equals = top_class == labels.view(*top_class.shape)
+                accuracy += torch.mean(equals.type(torch.FloatTensor))
+                all_predictions.extend(top_class.cpu().numpy())
+                all_labels.extend(labels.cpu().numpy())
 
-            print("Classification Report:")
-            print(class_report)
+        # Calculate confusion matrix and classification report
+        conf_matrix = confusion_matrix(all_labels, all_predictions)
+        class_report = classification_report(all_labels, all_predictions, output_dict=True)
+        
+        # Calculate F1 score and recall
+        f1 = f1_score(all_labels, all_predictions, average='weighted')
+        recall = recall_score(all_labels, all_predictions, average='weighted')
+        individual_recall = recall_score(all_labels, all_predictions, average=None)
+        average_recall = recall_score(all_labels, all_predictions, average='macro')
 
-            # Reset variables for the next epoch
-            running_loss = 0
-            accuracy = 0
-            all_predictions = []
-            all_labels = []
+        student_model.train()
+        print("Epoch: {}/{}.. ".format(e + 1, epochs),
+              "Train Loss: {:.3f}.. ".format(running_loss / len(student_train_loader)),
+              "Train Accuracy: {:.3f}.. ".format(running_corrects.double() / total_samples),
+              "val Loss: {:.3f}.. ".format(test_loss / len(student_test_loader)),
+              "val Accuracy: {:.3f}".format(accuracy / len(student_test_loader)))
+
+        # Log metrics to TensorBoard
+        writer.add_scalar('Loss/Train', running_loss / len(student_train_loader), e)
+        writer.add_scalar('Loss/Validation', test_loss / len(student_test_loader), e)
+        writer.add_scalar('Accuracy/Train', running_corrects.double() / total_samples, e)
+        writer.add_scalar('Accuracy/Validation', accuracy / len(student_test_loader), e)
+        writer.add_scalar('F1 Score/Validation', f1, e)
+        writer.add_scalar('Recall/Average', average_recall, e)
+        
+        # Log individual recall scores
+        for i, rec in enumerate(individual_recall):
+            writer.add_scalar(f'Recall/Class_{i}', rec, e)
+
+        # Store training and validation accuracies and losses
+        train_losses.append(running_loss / len(student_train_loader))
+        train_accuracies.append(running_corrects.double() / total_samples)
+        val_losses.append(test_loss / len(student_test_loader))
+        val_accuracies.append(accuracy / len(student_test_loader))
+
+        print("Confusion Matrix:")
+        print(conf_matrix)
+
+        print("Classification Report:")
+        print(class_report)
+
+        # Reset variables for the next epoch
+        running_loss = 0
+        accuracy = 0
+        all_predictions = []
+        all_labels = []
+
+# Close the SummaryWriter
+writer.close()
 
 # Plotting
 plt.figure(figsize=(12, 5))
@@ -340,7 +520,7 @@ plt.tight_layout()
 plt.show()
 
 # Evaluate privacy using PATE
-#data_dep_eps, data_ind_eps = pate.perform_analysis(teacher_preds=preds, indices=student_labels, noise_eps=epsilon,
-#                                                   delta=1e-5)
-#print("Data Independent Epsilon:", data_ind_eps)
-#print("Data Dependent Epsilon:", data_dep_eps)
+data_dep_eps, data_ind_eps = pate.perform_analysis(teacher_preds=preds, indices=student_labels, noise_eps=epsilon,
+                                                   delta=1e-5)
+print("Data Independent Epsilon:", data_ind_eps)
+print("Data Dependent Epsilon:", data_dep_eps)
