@@ -28,11 +28,11 @@ For the script used for training the individual models and for knowledge distill
 * Jupyter Notebook: 
 ```conda install jupyter notebook```
 # 📖 Running the scripts
-To train the individual models, you should use the notebook [image_classification.ipynb](./implementations/image_classification.ipynb)
+To train the individual models, you should use the notebook [image_classification.ipynb](./implementations/image_classification.ipynb).
 
-To train the student model through PATE, you should use the script [Project_PATE_ML.py](./implementations/Project_PATE_ML.py)
+To train the student model through PATE, you should use the script [Project_PATE_ML.py](./implementations/Project_PATE_ML.py).
 
-To train the student model through Knowledge Distillation, you should use the notebook [knowledge_distillation.ipynb](./implementations/knowledge_distillation.ipynb)
+To train the student model through Knowledge Distillation, you should use the notebook [knowledge_distillation.ipynb](./implementations/knowledge_distillation.ipynb).
 
 For the PATE implementation, knowledge distillation implementation and the script used for training the individual models:
 - The folder holding the dataset must be in the root directory. The structure should look like this:
