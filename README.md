@@ -52,6 +52,7 @@ For the PATE implementation, knowledge distillation implementation and the scrip
            - ...
    - Project_PATE_ML.py
    - image_classification.ipynb
+   - knowledge_distillation.ipynb
 - Only the folder names should match the folders the script is looking into (the name can be changed in the **dataset_name** variable).
 - The train and val folders should have the same amount of classes named the same way.
 - The images' names do not matter.
