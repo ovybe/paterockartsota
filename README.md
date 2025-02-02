@@ -23,7 +23,7 @@ For the script used for training the individual models and for knowledge distill
 * Numpy
 * PIL
 * matplotlib
-* 
+* tensorboard
 * opacus
 * Jupyter Notebook: 
 ```conda install jupyter notebook```
