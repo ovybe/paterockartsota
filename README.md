@@ -11,25 +11,30 @@ We created a conda environment for the PATE implementation of this repository, s
 * PyTorch, which will be installed through the fork above as it is a dependency.
 * Numpy, which will be installed through the fork above as it is a dependency.
 * PIL
+* tensorboard
 * matplotlib
 * Jupyter Notebook: 
 ```conda install jupyter notebook```
 
 
-For the script used for training the individual models, we used the current latest versions of pytorch and python:
+For the script used for training the individual models and for knowledge distillation, we used the current latest versions of pytorch and python:
 * Python >=3.9
 * Pytorch 2.5.1
 * Numpy
 * PIL
 * matplotlib
+* 
+* opacus
 * Jupyter Notebook: 
 ```conda install jupyter notebook```
 # Running the scripts
-To train the individual models, you should use the notebook [image_classification.ipynb](https://github.com/ovybe/paterockartsota/blob/main/implementations/Project_PATE_ML.py)
+To train the individual models, you should use the notebook [image_classification.ipynb](implementations/image_classification.ipynb)
 
-To train the student model through PATE, you should use the script [Project_PATE_ML.py](https://github.com/ovybe/paterockartsota/blob/main/implementations/image_classification.ipynb)
+To train the student model through PATE, you should use the script [Project_PATE_ML.py](implementations/Project_PATE_ML.py)
 
-For both the PATE implementation and the script used for training the individual models:
+To train the student model through Knowledge Distillation, you should use the notebook [knowledge_distillation.ipynb](implementations/knowledge_distillation.ipynb)
+
+For the PATE implementation, knowledge distillation implementation and the script used for training the individual models:
 - The folder holding the dataset must be in the root directory. The structure should look like this:
  - Root
    - dataset
@@ -59,11 +64,25 @@ For the script used for training the individual models:
 - It can be accessed as an .ipynb and have each code block ran in order.
 
 For the PATE implementation script:
+- Each student model's run is logged in the **runs** folder located in the root through tensorboard.
+- Tensorboard is used to visualize the runs. To do so, run the command ```tensorboard --logdir=runs``` through a terminal inside the root folder. Change the logdir variable to match the folder where the logs are stored.
+- Set the dataset directory in the script using the variable `dataset_name`.
+- Set the number of teachers using the variable `teachers_num`.
+- Set the teacher directory using the variable `teacher_folder`.
+- You set the teachers used in the teacher directory (the type used goes here, for example ['densenet201','densenet201','resnext'] for 3 teachers) using the variable `teacher_name`.
+- You can also adjust any other script parameters, change the model type used by the student or teacher models.
 - Simply run the py file through the terminal ```python Project_PATE_ML.py```.
 - You will know the script ended when the script displays the training/validation graphs it generated after the run.
 
+For the Knowledge Distillation implementation notebook
+- Each student model's run is logged in the **knowledge_distillation** folder located in the root through tensorboard.
+- Tensorboard is used to visualize the runs. To do so, run the command ```tensorboard --logdir=knowledge_distillation``` through a terminal inside the root folder. Change the logdir variable to match the folder where the logs are stored.
+- Set the dataset directory in the script using the variable `dataset_name`.
+- Set the teacher directory using the variable `teacher_dir`.
+- The script will try to load the teachers under ResNet18, DenseNet201 or ResNext64 if the `.pth` file contains these names.
+- Everything else is similar to the PATE implementation script, you can change the model type used by the student/teacher models or adjust parameters if you so wish.
+- Run the code blocks in order and wait for the student model to be trained for the amount of input epochs. You can also save the model afterwards.
+
 # Output Results
-Our current output results have been provided as graphs in the repo, under the names:
-* DENSENET101_100e_homogenous_dataset.png
-* RESNET18_100e_homogenous_dataset.png
-* RESNEXT64_100e_homogenous_dataset.png
+The code is written so that it uses Tensorboard to log the results gained from training/evaluating each epoch. Thus, we have provided our logs in the runs folder of this repository.
+We also showcase our current output results that were used in the research paper as graphs in the main folder of the repo, as .png images.
