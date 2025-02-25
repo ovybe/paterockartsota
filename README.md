@@ -90,4 +90,27 @@ Thus, we have provided our logs in the [runs](./runs/) folder of this repository
 We also showcase our current output results that were used in the research paper as graphs in the [graphs](./graphs/) folder of the repo, as .png images.
 
 # Semester 2 Week 1 Update
-We appended new images procured from the generated data of a GAN using the first and the second teacher's datasets to said datasets in hopes of improving model performance. We trained the teacher models ResNet18, ResNext64, DenseNet201 using the datasets with appended GAN images. We then trained and logged the PATE and Knowledge Distillation student models with a homogeneous ensemble consisting of the best-performing earlier trained teacher models to analyze further. We also trained a student model consisting of the new best-performing models for each dataset to compare with the earlier experiment's resulted best-performing model.
+We append new images procured from the generated data of a GAN using the first and the second teacher's datasets to said datasets in hopes of improving model performance. We train the teacher models ResNet18, ResNext64, DenseNet201 using the newly formed datasets with appended GAN images. Pick template for paper depending on where I'll apply.
+# Semester 2 Week 2 Update
+We train and log the PATE and Knowledge Distillation student models with a homogeneous ensemble consisting of the best-performing earlier trained teacher models to analyze further. We also train a student model consisting of the new best-performing models for each dataset to compare with the earlier experiment's resulted best-performing model.
+# Semester 2 Week 3 Update
+Present work done so far to my advisor. Work on solving any encountered issues and focus on given suggestions.
+# Semester 2 Week 4 Update
+Analyze achieved results and continue working on SOTA, perform necessary adjustments and work on presentation.
+# Semester 2 Week 5 Update
+Check-up on SOTA with advisor, work on any suggestions and continue work on SOTA.
+# Semester 2 Week 6 Update
+Analyze overall recall results and mark possible labels for removal.
+# Semester 2 Week 7 Update
+Check-up on work with advisor, run marked labels by him for advice. Proceed with removing marked label.
+# Semester 2 Week 8 Update
+Start training and logging of each teacher model with each dataset without the market labels.
+# Semester 2 Week 9 Update
+Continue previous week's work and check-up with advisor for further suggestions to follow.
+# Semester 2 Week 10 Update
+Work on research paper, add the new results and finish up.
+# Semester 2 Week 11 Update
+Run paper by advisor, modify/implement based on suggestions.
+# Semester 2 Weeks 12-14 Update
+Weekly meetings with advisor, proofreading and working on SOTA and presentation.
+
