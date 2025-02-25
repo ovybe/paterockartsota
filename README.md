@@ -88,3 +88,6 @@ For the PATE implementation, knowledge distillation implementation and the scrip
 The code is written so that it uses Tensorboard to log the results gained from training/evaluating each epoch. 
 Thus, we have provided our logs in the [runs](./runs/) folder of this repository for the run logs of the individual models and the [student_runs](./student_runs/) folder for the run logs of the trained student models.
 We also showcase our current output results that were used in the research paper as graphs in the [graphs](./graphs/) folder of the repo, as .png images.
+
+# Semester 2 Week 1 Update
+We appended new images procured from the generated data of a GAN to the first and the second teacher's datasets. We trained the teacher models ResNet18, ResNext64, DenseNet201 using the datasets with appended GAN images. We then trained and logged the PATE and Knowledge Distillation student models with a homogeneous ensemble consisting of the best-performing earlier trained teacher models to analyze further. We also trained a student model consisting of the new best-performing models for each dataset to compare with the earlier experiment's resulted best-performing model.
