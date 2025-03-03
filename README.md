@@ -80,7 +80,7 @@ For the PATE implementation, knowledge distillation implementation and the scrip
 - Tensorboard is used to visualize the runs. To do so, run the command ```tensorboard --logdir=knowledge_distillation``` through a terminal inside the root folder. Change the logdir variable to match the folder where the logs are stored.
 - Set the dataset directory in the script using the variable `dataset_name`.
 - Set the teacher directory using the variable `teacher_dir`.
-- The script will try to load the teachers under ResNet18, DenseNet201 or ResNext64 if the `.pth` file contains these names.
+- The script will try to load the teachers under ResNet18, DenseNet201 or ResNeXt101_64X4D if the `.pth` file contains these names.
 - Everything else is similar to the PATE implementation script, you can change the model type used by the student/teacher models or adjust parameters if you so wish.
 - Run the code blocks in order and wait for the student model to be trained for the amount of input epochs. You can also save the model afterwards.
 
@@ -90,7 +90,7 @@ Thus, we have provided our logs in the [runs](./runs/) folder of this repository
 We also showcase our current output results that were used in the research paper as graphs in the [graphs](./graphs/) folder of the repo, as .png images.
 
 # Semester 2 Week 1 Update
-We append new images procured from the generated data of a GAN using the first and the second teacher's datasets to said datasets in hopes of improving model performance. We train the teacher models ResNet18, ResNext64, DenseNet201 using the newly formed datasets with appended GAN images. Pick template for paper depending on where I'll apply.
+We append new images procured from the generated data of a GAN using the first and the second teacher's datasets to said datasets in hopes of improving model performance. We train the teacher models ResNet18, ResNeXt101_64X4D, DenseNet201 using the newly formed datasets with appended GAN images. Pick template for paper depending on where I'll apply.
 # Semester 2 Week 2 Update
 We train and log the PATE and Knowledge Distillation student models with a homogeneous ensemble consisting of the best-performing earlier trained teacher models to analyze further. We also train a student model consisting of the new best-performing models for each dataset to compare with the earlier experiment's resulted best-performing model.
 # Semester 2 Week 3 Update
