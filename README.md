@@ -63,6 +63,8 @@ For the PATE implementation, knowledge distillation implementation and the scrip
 - Each model's run is logged in the **runs** folder located in the root through tensorboard.
 - Tensorboard is used to visualize the runs. To do so, run the command ```tensorboard --logdir=runs``` through a terminal inside the root folder. Change the logdir variable to match the folder where the logs are stored.
 - It can be accessed as an .ipynb and have each code block ran in order.
+- One of the code blocks is used to generate the older teacher models to be able to be used by PATE. The code block needs to be modified and ruled for every teacher model to be used. This will save them with their name with the addition of '_old' in the same folder they're in.
+- There is also a code block used to run the model and predict an image, which can be modified accordingly to test the trained individual models.
 
 ### 🟩 For the PATE implementation script:
 - Each student model's run is logged in the **runs** folder located in the root through tensorboard.
