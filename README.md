@@ -11,7 +11,7 @@ We created a conda environment for the PATE implementation of this repository, s
 * PyTorch, which will be installed through the fork above as it is a dependency.
 * Numpy, which will be installed through the fork above as it is a dependency.
 * PIL
-* tensorboard
+* tensorboard and its required module future
 * matplotlib
 * Jupyter Notebook: 
 ```conda install jupyter notebook```
